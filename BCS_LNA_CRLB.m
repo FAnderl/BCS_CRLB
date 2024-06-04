@@ -10,7 +10,7 @@
 %
 %   Specifically the following things are implemented here: 
 %   1) Symbolic calculation of derivatives of log-likelihood function
-%   2) UPDATE: Symbolic Calculationb 
+%   2) UPDATE: Numerical Calculations
 %
 %    Authors: Florian Anderl (florian.anderl@ntnu.no)
 %
@@ -78,9 +78,9 @@ syms active_up(t,S_ext)                                             % Active Upt
 syms basal_RR(t,RR)                                                 % Basal Production of RR
 syms TF_maturation(t,S_int, RR)                                     % Maturation of TF
 syms TF_dematuration(t,TF)                                          % Degradation of TF
-syms transcription_translation(t,TF)                                                % Transcription/ Activation       
+syms transcription_translation(t,TF)                                % Transcription/ Activation       
 
-assumeAlso([gamma(t) degrad_S_ext(t,S_ext) degrad_S_int(t,S_int) degrad_RR(t,RR) degrad_TF(t,TF) degrad_P(t,P) active_up(t,S_ext) basal_RR(t,RR) TF_maturation(t,S_int, RR) TF_dematuration(t,TF) active_TF(t,TF)], 'real')
+assumeAlso([gamma(t) degrad_S_ext(t,S_ext) degrad_S_int(t,S_int) degrad_RR(t,RR) degrad_TF(t,TF) degrad_P(t,P) active_up(t,S_ext) basal_RR(t,RR) TF_maturation(t,S_int, RR) TF_dematuration(t,TF) transcription_translation(t,TF)], 'real')
 
 degrad_S_ext(t,S_ext) = delta_S * S_ext;
 degrad_S_int(t,S_int) = delta_S * S_int;
@@ -92,7 +92,7 @@ basal_RR(t,RR) = kappa_RR;
 TF_maturation(t,S_int, RR) = k_TF_m * S_int * RR;
 TF_dematuration(t,TF) = k_TF_f * TF;
 transcription_translation(t,TF) = alpha_T * kappa_T * TF / (K_T + TF);
-gamma(t) = gamma_const;
+gamma(t) = diff(gamma_const * exp(-((t-200)^2)/50),t);
 
 % Placeholder Argument with the right dimensions
 syms u [NUM_STATE_VARS 1] real;
@@ -107,7 +107,7 @@ a_vec_x = a_vec(x_vec(1),x_vec(2),x_vec(3), x_vec(4), x_vec(5));
 
 % Covariance Matrix
 syms Sigma real
-Sigma = diag(S * a_vec(x_vec(1),x_vec(2),x_vec(3), x_vec(4), x_vec(5)));
+Sigma = diag(S * a_vec(x_vec(1),x_vec(2),x_vec(3), x_vec(4), x_vec(5)));    % TODO: Unused -> Remove
 
 
 % Define State Space System
@@ -210,12 +210,12 @@ F = odeFunction(F,vars,gma_params);
 
 % Substitute Parameter Values
 
-delta_S = 0.1;
-delta_RR = 0.1;
+delta_S = 0.003;
+delta_RR = 0.01;
 delta_TF = 0.1;
 delta_P = 0.1;
 
-kappa_up = 0.1;
+kappa_up = 0.001;
 K_up = 0.1;
 kappa_RR = 0.1;
 k_TF_m = 0.1;
@@ -224,7 +224,9 @@ kappa_T = 0.5;
 K_T = 0.1;
 alpha_T = 1;
 
-gamma_const = 0.1;
+
+
+gamma_const = 100;
 
 
 % Observation Noise Variance
@@ -232,18 +234,20 @@ sigma_obs = 1;
 xi = 1;
 
 % Define time step tau
-tau = 0.1;
+tau = 1;
 
+
+init_states = [1e-3, 1e-3, 100, 1e-3, 1e-3]
 
 % Solve ODE system 
 
 F_ode=@(t,Y) F(t, Y, eval(subs(gma_params)));
 t0 = 0;
 t_end = 500;
-y0 = [100,1,100,1,1];  % TODO: Replace with FLAG coded intital conditions; Is that a problem?
-opt = odeset('RelTol',1e-6,'AbsTol',1e-6,'Vectorized','on');
+y0 = init_states;  % TODO: Replace with FLAG coded intital conditions; Is that a problem?
+opt = odeset('RelTol',1e-6,'AbsTol',1e-6,'Vectorized','on',NonNegative=[1,2,3,4,5]);
 figure(10)
-gma_sol = ode15s(F_ode,[t0:tau:t_end],y0,opt);
+gma_sol = ode15s(F_ode,[t0:tau:t_end    ],y0,opt);
 ode15s(F_ode,[t0:tau:t_end],y0,opt);
 legend('S_ext','S_int', 'RR', 'TF', 'P')
 title("Original GMA-system Dynamic Solution")
@@ -265,11 +269,11 @@ J_0 = (zeros(NUM_STATE_VARS, NUM_STATE_VARS));
 
 % Initial values for the states for computation of J_1; Values cannot be
 % zero due to *DIVISION BY ZERO*
-S_ext = 100
-S_int = 1
-RR = 100
-TF = 1
-P = 1
+S_ext = init_states(1)
+S_int = init_states(2)
+RR = init_states(3)
+TF = init_states(4)
+P = init_states(5)
 
 % J1
 subs(D_11)
@@ -286,7 +290,9 @@ J_FIM = zeros(NUM_STATE_VARS, NUM_STATE_VARS, 250);
 
 inv_J_FIM =zeros(NUM_STATE_VARS, NUM_STATE_VARS, 250);
 
-for i = 2:250
+num_t_steps = size(sol_t,2);
+
+for i = 2:num_t_steps
 
     % Update States - J_{n+1}
     S_ext = sol_t(1, i);
@@ -294,6 +300,28 @@ for i = 2:250
     RR = sol_t(3,i);
     TF = sol_t(4,i);
     P = sol_t(5,i); 
+
+
+    % Guard against *DIVISION BY ZERO*
+    if S_ext == 0
+        S_ext = 0.0001;
+    elseif S_int == 0
+        S_int = 0.0001;
+    elseif RR == 0
+        RR = 0.0001;    
+    elseif TF == 0
+        TF = 0.0001;
+    elseif P == 0
+        P = 0.0001;
+    end
+    
+
+
+    % Set t (only relevant if gamma(t) is a function of t)
+    time_vec = t0:tau:t_end;
+    t = time_vec(i);
+
+
 
     % Substitute - J_{n+1}
 
@@ -312,12 +340,12 @@ for i = 2:250
 
 end
 
-%% Ploting
+%% Plotting
 
 % Plot the element of the inverse FIM corresponding to S_ext (first element)
 figure(11)
-el = inv_J_FIM(3,3,:);
-plot(1:250, squeeze(el))
+el = inv_J_FIM(1,1,:);
+plot(1:num_t_steps, squeeze(el))
 title("Inverse FIM Element (1,1) over Time")
 xlabel("Time")
 ylabel("Inverse FIM Element (1,1)")
