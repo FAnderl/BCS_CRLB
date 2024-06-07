@@ -92,7 +92,7 @@ basal_RR(t,RR) = kappa_RR;
 TF_maturation(t,S_int, RR) = k_TF_m * S_int * RR;
 TF_dematuration(t,TF) = k_TF_f * TF;
 transcription_translation(t,TF) = alpha_T * kappa_T * TF / (K_T + TF);
-gamma(t) = diff(gamma_const * exp(-((t-200)^2)/50),t);
+gamma(t) = gamma_const; %diff(gamma_const * exp(-((t-200)^2)/50),t);
 
 % Placeholder Argument with the right dimensions
 syms u [NUM_STATE_VARS 1] real;
@@ -107,7 +107,6 @@ a_vec_x = a_vec(x_vec(1),x_vec(2),x_vec(3), x_vec(4), x_vec(5));
 
 % Covariance Matrix
 syms Sigma real
-Sigma = diag(S * a_vec(x_vec(1),x_vec(2),x_vec(3), x_vec(4), x_vec(5)));    % TODO: Unused -> Remove
 
 
 % Define State Space System
@@ -121,20 +120,54 @@ z_np1 = F(x_vec(1),x_vec(2),x_vec(3), x_vec(4), x_vec(5));
 % Covariance Matrix
 G(u) = diag(S * sqrt(a_vec(u(1), u(2), u(3), u(4), u(5)))) * tau;
 
-v_np1 = G(x_vec(1),x_vec(2),x_vec(3), x_vec(4), x_vec(5));
 
+% This is probably obsoltet now; remove consequently...
+v_np1 = G(x_vec(1),x_vec(2),x_vec(3), x_vec(4), x_vec(5));
 Sigma_n = v_np1 * v_np1.';
 
 
 
+% Redefine Sigma according to updated model
+Sigma = sym(zeros(NUM_STATE_VARS, NUM_STATE_VARS),'r');
+
+for i = 1 : NUM_STATE_VARS
+    for j = 1 : NUM_STATE_VARS
+   
+        % sigma_ii
+            if i == j
+                  temp = S.^2*a_vec_x; 
+                  % Could easily be described by S*a (this should also be done in this fashion in the paper...done!)
+                  Sigma(i,j) =  tau * temp(i);
+                
+                
+            elseif i ~= j 
+                    
+
+                    for k = 1 : NUM_REACTION_CHANNELS
+
+                        Sigma(i,j) =  Sigma(i,j) + (tau * (S(i,k)* S(j,k)) * (a_vec_x(k)));
+                  
+                    end
+            
+            end
+end
+end
+
+
+% This is due to implementation-specific reasons; ultimately make this
+% nicer...
+Sigma_n = Sigma
+
+% Inverse of Sigma
+i_Sigma_n = inv(Sigma_n);
 
 % D^11
 
 D_11 = sym(zeros(NUM_STATE_VARS, NUM_STATE_VARS), 'r');
 for i = 1:NUM_STATE_VARS
     for j = 1:NUM_STATE_VARS
-    D_11(i,j) = diff(z_np1.', x_vec(i)) * pinv(Sigma_n) * diff(z_np1, x_vec(j))  + ...
-        1/2 * trace(pinv(Sigma_n) * diff(Sigma_n,x_vec(i)) * pinv(Sigma_n)* diff(Sigma_n,x_vec(j)));
+    D_11(i,j) = diff(z_np1.', x_vec(i)) * i_Sigma_n * diff(z_np1, x_vec(j))  + ...
+        (1/2) * trace(i_Sigma_n * diff(Sigma_n,x_vec(i)) * i_Sigma_n* diff(Sigma_n,x_vec(j)));
 
     end
 end
@@ -144,7 +177,7 @@ end
 
 syms D_12  real % Matrix (nxn)
 
-D_12 = - jacobian(z_np1.',x_vec) * pinv(Sigma_n) ;
+D_12 = - jacobian(z_np1.',x_vec) * i_Sigma_n ;
 
 
 
@@ -166,14 +199,14 @@ h = [0;0;0;0;xi*P]    % Observation vector
 
 
 
-D_22 = inv(Sigma_n) +  (jacobian(h.', x_vec)  *   1/(sigma_obs^2)  * jacobian(h.', x_vec).') ;
+D_22 = i_Sigma_n +  (jacobian(h.', x_vec)  *   1/(sigma_obs^2)  * jacobian(h.', x_vec).') ;
 
 
 
 
 
 
-% Setting up ODE state space model for solving
+%%  Setting up ODE state space model for solving & Solving it
 
 syms S_ext(t)  S_int(t) RR(t) TF(t) P(t)   % state variables
 rhs = [diff(S_ext(t), t); diff(S_int(t), t); diff(RR(t), t); diff(TF(t), t); diff(P(t), t)] == S*a_vec(x_vec(1),x_vec(2),x_vec(3), x_vec(4), x_vec(5));
@@ -226,7 +259,7 @@ alpha_T = 1;
 
 
 
-gamma_const = 100;
+gamma_const = 1;
 
 
 % Observation Noise Variance
@@ -234,10 +267,10 @@ sigma_obs = 1;
 xi = 1;
 
 % Define time step tau
-tau = 1;
+tau = 0.01;
 
 
-init_states = [1e-3, 1e-3, 100, 1e-3, 1e-3]
+init_states = [1, 1, 100, 1, 1]
 
 % Solve ODE system 
 
@@ -247,7 +280,7 @@ t_end = 500;
 y0 = init_states;  % TODO: Replace with FLAG coded intital conditions; Is that a problem?
 opt = odeset('RelTol',1e-6,'AbsTol',1e-6,'Vectorized','on',NonNegative=[1,2,3,4,5]);
 figure(10)
-gma_sol = ode15s(F_ode,[t0:tau:t_end    ],y0,opt);
+gma_sol = ode15s(F_ode,[t0:tau:t_end],y0,opt);
 ode15s(F_ode,[t0:tau:t_end],y0,opt);
 legend('S_ext','S_int', 'RR', 'TF', 'P')
 title("Original GMA-system Dynamic Solution")
@@ -285,7 +318,7 @@ subs(D_12)
 subs(D_22)
 
 
-
+% Tichavsky Recursion Equation
 J = eval(D_22) - (eval(D_21)*pinv(J_0 + eval(D_11))) * eval(D_12);
 
 
@@ -364,9 +397,14 @@ ylabel("Inverse FIM Element (1,1)")
 
 
 
+
 %% Easy facilitated toy example with fewer states and simple propensity function vector
 
+
 clear
+
+syms t tau real
+
 % Define State Variables 
 syms X1 X2 real
 % Vector x of State Variables
@@ -386,7 +424,7 @@ S = sym([
 
 % Define Propensity Functions 
 syms a1(t, X1, X2) a2(t, X1, X2) real
-a1(t, X1) = k1;
+a1(t, X1) = k1* diff(sin(2*pi*.1 *t),t);
 deg1(t, X1) = d1 * X1; 
 a2(t, X1) = k2 * X1;
 deg2(t, X2) = d2 * X2; 
@@ -399,13 +437,13 @@ a_vec(u) = [a1(t, u(1));deg1(t, u(1)) ; a2(t, u(1)); deg2(t, u(2))];
 
 
 % Define State Space System
-F(u) = u + S * a_vec(u(1), u(2));
+F(u) = u + S * a_vec(u(1), u(2)) * tau;
 
 % Mean 
 z_np1 = F(x_vec(1), x_vec(2));
 
 % Covariance Matrix
-G(u) = diag(S * sqrt(a_vec(u(1), u(2))));
+G(u) = diag(S * sqrt(a_vec(u(1), u(2)))) * tau;
 v_np1 = G(x_vec(1), x_vec(2));
 Sigma_n = v_np1 * v_np1.';
 
@@ -459,7 +497,7 @@ sigma_obs = 1;
 xi = 1;
 
 % Define time step tau
-tau = 1;
+tau = 0.01;
 
 init_states_toy = [1, 1e-4];
 
@@ -544,9 +582,17 @@ end
 
 % Plot the element of the inverse FIM corresponding to X1 (first element)
 figure(11)
-el = inv_J_FIM(2,2,:);
+el = inv_J_FIM(1,1,:);
 plot(1:num_t_steps, squeeze(el))
 title("Inverse FIM Element (1,1) over Time")
 xlabel("Time")
 ylabel("Inverse FIM Element (1,1)")
 
+
+
+
+% Local Functions
+function [D_11, D_12, D_21, D_22] = calculateD()
+
+
+end
