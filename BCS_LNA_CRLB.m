@@ -15,8 +15,10 @@
 %    Authors: Florian Anderl (florian.anderl@ntnu.no)
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% Main
 clear
-% GLOBAL FLAGS
+%GLOBAL FLAGS
 
 NUM_STATE_VARS = 5              % UNUSED at the mooment :(
 NUM_REACTION_CHANNELS = 11       % loosely referring to the protein transduction model
@@ -89,7 +91,7 @@ degrad_TF(t,TF) = delta_TF * TF;
 degrad_P(t,P) = delta_P * P;
 active_up(t,S_ext) = kappa_up * S_ext / (K_up + S_ext);
 basal_RR(t,RR) = kappa_RR;
-TF_maturation(t,S_int, RR) = k_TF_m * S_int * RR;
+TF_maturation(t,S_int, RR) = k_TF_m * S_int^2 * RR^2;
 TF_dematuration(t,TF) = k_TF_f * TF;
 transcription_translation(t,TF) = alpha_T * kappa_T * TF / (K_T + TF);
 gamma(t) = gamma_const; %diff(gamma_const * exp(-((t-200)^2)/50),t);
@@ -105,13 +107,16 @@ a_vec(u) = [gamma(t); degrad_S_ext(t, u(1)); active_up(t, u(1)); degrad_S_int(t,
 a_vec_x = a_vec(x_vec(1),x_vec(2),x_vec(3), x_vec(4), x_vec(5));
 
 
+
+
+
 % Covariance Matrix
 syms Sigma real
 
 
 % Define State Space System
 
-% TODO: I need to establish 
+% Mean State Equation
 F(u) = u + S * a_vec(u(1), u(2), u(3), u(4), u(5)) * tau;
 
 % Mean 
@@ -145,12 +150,12 @@ for i = 1 : NUM_STATE_VARS
 
                     for k = 1 : NUM_REACTION_CHANNELS
 
-                        Sigma(i,j) =  Sigma(i,j) + (tau * (S(i,k)* S(j,k)) * (a_vec_x(k)));
+                        Sigma(i,j) = Sigma(i,j) + (tau * (S(i,k)* S(j,k)) * (a_vec_x(k)));
                   
                     end
             
             end
-end
+    end
 end
 
 
@@ -158,15 +163,22 @@ end
 % nicer...
 Sigma_n = Sigma
 
-% Inverse of Sigma
+% If all fails, make Sigma Idendity Matrix
+% Sigma_n = sym(eye(NUM_STATE_VARS,NUM_STATE_VARS));
+
+% Inverse of Sigma % THIS MIGHT BE PROBLEMATIC
 i_Sigma_n = inv(Sigma_n);
+
+% Define a place holder matrix i_Sigma_n and then calculate the inversion
+% ONLY NUMERICALLY
+syms i_Sigma_n [NUM_STATE_VARS,NUM_STATE_VARS]
 
 % D^11
 
 D_11 = sym(zeros(NUM_STATE_VARS, NUM_STATE_VARS), 'r');
 for i = 1:NUM_STATE_VARS
     for j = 1:NUM_STATE_VARS
-    D_11(i,j) = diff(z_np1.', x_vec(i)) * i_Sigma_n * diff(z_np1, x_vec(j))  + ...
+    D_11(i,j) = diff(z_np1, x_vec(i)).' * i_Sigma_n * diff(z_np1, x_vec(j))  + ...
         (1/2) * trace(i_Sigma_n * diff(Sigma_n,x_vec(i)) * i_Sigma_n* diff(Sigma_n,x_vec(j)));
 
     end
@@ -177,7 +189,8 @@ end
 
 syms D_12  real % Matrix (nxn)
 
-D_12 = - jacobian(z_np1.',x_vec) * i_Sigma_n ;
+% THIS has been changed. I think I have to transpose the jacobian directly!
+D_12 = - jacobian(z_np1,x_vec).' * i_Sigma_n ;
 
 
 
@@ -199,7 +212,7 @@ h = [0;0;0;0;xi*P]    % Observation vector
 
 
 
-D_22 = i_Sigma_n +  (jacobian(h.', x_vec)  *   1/(sigma_obs^2)  * jacobian(h.', x_vec).') ;
+D_22 = i_Sigma_n +  (jacobian(h.', x_vec).'  *   1/(sigma_obs^2)  * jacobian(h.', x_vec)) ;
 
 
 
@@ -248,7 +261,7 @@ delta_RR = 0.01;
 delta_TF = 0.1;
 delta_P = 0.1;
 
-kappa_up = 0.3;
+kappa_up = 1;
 K_up = 0.1;
 kappa_RR = 0.1;
 k_TF_m = 0.1;
@@ -267,16 +280,16 @@ sigma_obs = 1;
 xi = 1;
 
 % Define time step tau
-tau = 0.01;
+tau = 1;
 
 
-init_states = [1, 1, 100, 1, 1]
+init_states = [10, 10, 100, 10, 10];
 
 % Solve ODE system 
 
 F_ode=@(t,Y) F(t, Y, eval(subs(gma_params)));
 t0 = 0;
-t_end = 500;
+t_end = 100;
 y0 = init_states;  % TODO: Replace with FLAG coded intital conditions; Is that a problem?
 opt = odeset('RelTol',1e-6,'AbsTol',1e-6,'Vectorized','on',NonNegative=[1,2,3,4,5]);
 figure(10)
@@ -288,7 +301,7 @@ title("Original GMA-system Dynamic Solution")
 
 
 % Evaluate solution at the desired intervals (tau)
-sol_t = deval(t0:tau:t_end, gma_sol)
+sol_t = deval(t0:tau:t_end, gma_sol);
 
 
 
@@ -302,14 +315,26 @@ J_0 = (zeros(NUM_STATE_VARS, NUM_STATE_VARS));
 
 % Initial values for the states for computation of J_1; Values cannot be
 % zero due to *DIVISION BY ZERO*
-S_ext = init_states(1)
-S_int = init_states(2)
-RR = init_states(3)
-TF = init_states(4)
-P = init_states(5)
+S_ext = init_states(1);
+S_int = init_states(2);
+RR = init_states(3);
+TF = init_states(4);
+P = init_states(5);
 
-% Initia time for J0 - > J1
-t = 0
+% Initial time for J0 - > J1
+t = 0;
+
+
+
+num_i_Sigma_n = pinv(eval(subs(Sigma_n)));
+
+% Substitution of i_Sigma_n 
+for i = 1: NUM_STATE_VARS
+    for j = 1: NUM_STATE_VARS
+        eval(strcat(string(i_Sigma_n(i,j)),"=",string(num_i_Sigma_n(i,j))));
+    end
+end
+
 
 % J1
 subs(D_11)
@@ -330,6 +355,15 @@ inv_J_FIM =zeros(NUM_STATE_VARS, NUM_STATE_VARS, 250);
 
 num_t_steps = size(sol_t,2);
 
+
+% Some restructuring so that I can use an optimized funtion for recursion
+% computation
+D_11_cont = zeros(NUM_STATE_VARS, NUM_STATE_VARS, num_t_steps);
+D_12_cont = zeros(NUM_STATE_VARS, NUM_STATE_VARS, num_t_steps);
+D_21_cont = zeros(NUM_STATE_VARS, NUM_STATE_VARS, num_t_steps);
+D_22_cont = zeros(NUM_STATE_VARS, NUM_STATE_VARS, num_t_steps);
+
+% Fill up the D-containers
 for i = 2:num_t_steps
 
     % Update States - J_{n+1}
@@ -362,26 +396,94 @@ for i = 2:num_t_steps
 
     % Set t (only relevant if gamma(t) is a function of t)
     time_vec = t0:tau:t_end;
+    
     t = time_vec(i);
 
 
+    num_i_Sigma_n = pinv(eval(subs(Sigma_n)));
 
-    % Substitute - J_{n+1}
+    % Substitution of i_Sigma_n 
+    for k = 1: NUM_STATE_VARS
+        for j = 1: NUM_STATE_VARS
+            eval(strcat(string(i_Sigma_n(k,j)),"=",string(num_i_Sigma_n(k,j)),";"));
+        end
+    end
 
-    subs(D_11);
-    subs(D_21);
-    subs(D_12);
-    subs(D_22);
 
-
-    J = eval(D_22) - (eval(D_21)*pinv(J + eval(D_11))) * eval(D_12);
-
-    J_FIM(:,:,i) = J;
-    
-    inv_J_FIM(:,:,i) = pinv(J);
+    D_11_cont(:,:,i) = eval(subs(D_11));
+    D_21_cont(:,:,i) = eval(subs(D_21));
+    D_12_cont(:,:,i) = eval(subs(D_12));
+    D_22_cont(:,:,i) = eval(subs(D_22));
 
 
 end
+
+% This creates the optimized MEX function (It is a bit suboptimal that this is done everytime atm but accounts for the ARGS having possibly different dimensions depending on tau; should be optimized in the future)
+eval("codegen calculateRecursion.m -args {D_11_cont,D_12_cont,D_21_cont,D_22_cont, J,NUM_STATE_VARS} ")
+
+%Calculate Recursion
+[J_FIM, J_FIM_inv]  = calculateRecursion_mex(D_11_cont, D_12_cont, D_21_cont, D_22_cont, J, NUM_STATE_VARS); 
+
+% Calculate the recursion 
+%[J_FIM, J_FIM_inv] = calculateRecursion(D_11_cont, D_12_cont, D_21_cont, D_22_cont, J, NUM_STATE_VARS);
+
+
+
+
+% %% TODO: This loop should ultimately be replaced by a simple function call
+% Update: ... has been replaced
+% for i = 2:num_t_steps
+% 
+%     % Update States - J_{n+1}
+%     S_ext = sol_t(1, i);
+%     S_int = sol_t(2,i);
+%     RR = sol_t(3,i);
+%     TF = sol_t(4,i);
+%     P = sol_t(5,i); 
+% 
+% 
+%     % Guard against *DIVISION BY ZERO*
+%     if S_ext == 0
+%         S_ext = 0.0001;
+%     end
+%     if S_int == 0
+%         S_int = 0.0001;
+%     end
+% 
+%     if RR == 0
+%         RR = 0.0001;  
+%     end
+%     if TF == 0
+%         TF = 0.0001;
+%     end
+%     if P == 0
+%         P = 0.0001;
+%     end
+%     
+% 
+% 
+%     % Set t (only relevant if gamma(t) is a function of t)
+%     time_vec = t0:tau:t_end;
+%     t = time_vec(i);
+% 
+% 
+% 
+%     % Substitute - J_{n+1}
+% 
+%     subs(D_11);
+%     subs(D_21);
+%     subs(D_12);
+%     subs(D_22);
+% 
+% 
+%     J = eval(D_22) - (eval(D_21)*pinv(J + eval(D_11))) * eval(D_12);
+% 
+%     J_FIM(:,:,i) = J;
+%     
+%     inv_J_FIM(:,:,i) = pinv(J);
+% 
+% 
+% end
 
 %% Plotting
 
@@ -394,205 +496,3 @@ xlabel("Time")
 ylabel("Inverse FIM Element (1,1)")
 
 
-
-
-
-
-%% Easy facilitated toy example with fewer states and simple propensity function vector
-
-
-clear
-
-syms t tau real
-
-% Define State Variables 
-syms X1 X2 real
-% Vector x of State Variables
-x_vec = [X1; X2];
-assumeAlso(x_vec,'real')
-
-% Parameters 
-syms k1 k2 d1 d2 real
-params = [k1, k2, d1, d2];
-
-% Stoichiometry Matrix
-syms S real
-S = sym([
-    1 -1 -1 0 ;
-    0 0  1 -1 
-]);
-
-% Define Propensity Functions 
-syms a1(t, X1, X2) a2(t, X1, X2) real
-a1(t, X1) = k1* diff(sin(2*pi*.1 *t),t);
-deg1(t, X1) = d1 * X1; 
-a2(t, X1) = k2 * X1;
-deg2(t, X2) = d2 * X2; 
-
-% Placeholder Argument with the right dimensions
-syms u [2 1] real;
-
-% Vector a of Propensity Functions
-a_vec(u) = [a1(t, u(1));deg1(t, u(1)) ; a2(t, u(1)); deg2(t, u(2))];
-
-
-% Define State Space System
-F(u) = u + S * a_vec(u(1), u(2)) * tau;
-
-% Mean 
-z_np1 = F(x_vec(1), x_vec(2));
-
-% Covariance Matrix
-G(u) = diag(S * sqrt(a_vec(u(1), u(2)))) * tau;
-v_np1 = G(x_vec(1), x_vec(2));
-Sigma_n = v_np1 * v_np1.';
-
-% D^11
-D_11 = sym(zeros(2, 2), 'r');
-for i = 1:2
-    for j = 1:2
-        D_11(i,j) = diff(z_np1.', x_vec(i)) * pinv(Sigma_n) * diff(z_np1, x_vec(j))  + ...
-            1/2 * trace(pinv(Sigma_n) * diff(Sigma_n,x_vec(i)) * pinv(Sigma_n)* diff(Sigma_n,x_vec(j)));
-    end
-end
-
-% D^12
-syms D_12  real % Matrix (2x2)
-D_12 = - jacobian(z_np1.',x_vec) * pinv(Sigma_n) ;
-
-% D^21
-D_21 = D_12.';
-
-% Observation Model (assumed Gaussian)
-syms xi sigma_obs real
-
-% D^22
-h = [0; xi*X2];    % Observation vector
-D_22 = inv(Sigma_n) +  (jacobian(h.', x_vec)  *   1/(sigma_obs^2)  * jacobian(h.', x_vec).') ;
-
-% Setting up ODE state space model for solving
-syms X1(t) X2(t)   % state variables
-rhs = [diff(X1(t), t); diff(X2(t), t)] == S*a_vec(x_vec(1), x_vec(2));
-
-% Defining Symbolic ODE System
-diff_X1 = rhs(1);
-diff_X2 = rhs(2);
-eq_sys = [diff_X1; diff_X2];
-sys_vars =["X1", "X2"];
-vars = [X1(t), X2(t)];
-
-[MS,F] = massMatrixForm(eq_sys,vars);
-MS = odeFunction(MS,vars);
-F = odeFunction(F,vars,params);
-
-% Substitution with real, numerical values
-% Substitute Parameter Values
-k1 = 0.1;
-k2 = 0.2;
-d1 = 0.1; 
-d2 = 0.1; 
-
-% Observation Noise Variance
-sigma_obs = 1;
-xi = 1;
-
-% Define time step tau
-tau = 0.01;
-
-init_states_toy = [1, 1e-4];
-
-% Solve ODE system 
-F_ode=@(t,Y) F(t, Y, eval(subs(params)));
-t0 = 0;
-t_end = 10;
-y0 = init_states_toy;
-
-opt = odeset('RelTol',1e-6,'AbsTol',1e-6,'Vectorized','on',NonNegative=[1,2]);
-figure(10)
-sol = ode15s(F_ode,[t0:tau:t_end],y0,opt);
-ode15s(F_ode,[t0:tau:t_end],y0,opt);
-legend('X1', 'X2')
-title("Toy Example Dynamic Solution")
-
-
-sol_toy = deval(t0:tau:t_end, sol);
-
-% FIM RECURSION
-
-% Define the (initial ?) states
-
-J_0 = (zeros(2, 2));
-
-% Initial values for the states for computation of J_1; Values cannot be
-% zero due to *DIVISION BY ZERO*
-
-X1 = init_states_toy(1);
-X2 = init_states_toy(2);
-
-
-% Initia time for J0 - > J1
-t = 0;
-
-% J1
-subs(D_11);
-subs(D_21);
-subs(D_12);
-subs(D_22);
-
-J = eval(D_22) - (eval(D_21)*pinv(J_0 + eval(D_11))) * eval(D_12);
-
-% Container for FIM for each time step
-J_FIM = zeros(2, 2, 10);
-inv_J_FIM =zeros(2, 2, 10);
-
-num_t_steps = size(sol_toy,2);
-
-for i = 2:num_t_steps
-
-    % Update States - J_{n+1}
-    X1 = sol_toy(1, i);
-    X2 = sol_toy(2,i);
-
-    % Guard against *DIVISION BY ZERO*
-    if X1 == 0
-        X1 = 0.0001;
-    end
-    if X2 == 0
-        X2 = 0.0001;
-    end
-
-    % Set t (only relevant if gamma(t) is a function of t)
-    time_vec = t0:tau:t_end;
-    t = time_vec(i);
-
-    % Substitute - J_{n+1}
-    subs(D_11);
-    subs(D_21);
-    subs(D_12);
-    subs(D_22);
-
-    J = eval(D_22) - (eval(D_21)*pinv(J + eval(D_11))) * eval(D_12);
-
-    J_FIM(:,:,i) = J;
-    inv_J_FIM(:,:,i) = pinv(J);
-
-end
-
-
-
-% Plot the element of the inverse FIM corresponding to X1 (first element)
-figure(11)
-el = inv_J_FIM(1,1,:);
-plot(1:num_t_steps, squeeze(el))
-title("Inverse FIM Element (1,1) over Time")
-xlabel("Time")
-ylabel("Inverse FIM Element (1,1)")
-
-
-
-
-% Local Functions
-function [D_11, D_12, D_21, D_22] = calculateD()
-
-
-end
