@@ -11,6 +11,7 @@
 %   Specifically the following things are implemented here: 
 %   1) Symbolic calculation of derivatives of log-likelihood function
 %   2) UPDATE: Numerical Calculations
+%   3) Ultimately, this         
 %
 %    Authors: Florian Anderl (florian.anderl@ntnu.no)
 %
@@ -59,13 +60,14 @@ gma_params = [delta_S, delta_RR, delta_TF, delta_P, kappa_up, K_up, kappa_RR, k_
 
 % Stoichiometry Matrix
 syms S real
+% TODO: 1,2 : 0 -> -1 
 S = sym([
     1 -1 -1 0 0 0 0 0 0 0 0;
     0 0 1 -1 0 -2 0 2 0 0 0;
     0 0 0 0 1 -2 -1 2 0 0 0;
     0 0 0 0 0 1 0 -1 -1 0 0;
     0 0 0 0 0 0 0 0 0 1 -1
-]);
+])
 
 
 % Define Propensity Functions 
@@ -84,7 +86,7 @@ syms transcription_translation(t,TF)                                % Transcript
 
 assumeAlso([gamma(t) degrad_S_ext(t,S_ext) degrad_S_int(t,S_int) degrad_RR(t,RR) degrad_TF(t,TF) degrad_P(t,P) active_up(t,S_ext) basal_RR(t,RR) TF_maturation(t,S_int, RR) TF_dematuration(t,TF) transcription_translation(t,TF)], 'real')
 
-degrad_S_ext(t,S_ext) = delta_S * S_ext;
+degrad_S_ext(t,S_ext) =  delta_S * S_ext;
 degrad_S_int(t,S_int) = delta_S * S_int;
 degrad_RR(t,RR) = delta_RR * RR;
 degrad_TF(t,TF) = delta_TF * TF;
@@ -94,7 +96,7 @@ basal_RR(t,RR) = kappa_RR;
 TF_maturation(t,S_int, RR) = k_TF_m * S_int^2 * RR^2;
 TF_dematuration(t,TF) = k_TF_f * TF;
 transcription_translation(t,TF) = alpha_T * kappa_T * TF / (K_T + TF);
-gamma(t) = gamma_const; %diff(gamma_const * exp(-((t-200)^2)/50),t);
+gamma(t) = diff(gamma_const/2 * sin(2*pi*0.1*t));%diff(gamma_const * exp(-((t-200)^2)/200),t);%; %diff(gamma_const * exp(-((t-200)^2)/50),t);
 
 % Placeholder Argument with the right dimensions
 syms u [NUM_STATE_VARS 1] real;
@@ -235,7 +237,7 @@ diff_P  = rhs(5)
 eq_sys = [diff_S_ext; diff_S_int; diff_RR; diff_TF; diff_P];
 
 
-sys_vars =["S_ext","S_int", "RR", "TF", "P"];
+sys_vars =["S_{ext}","S_{int}", "RR", "TF", "P"];
 
 vars = [S_ext(t),S_int(t), RR(t), TF(t), P(t)]; % TODO: Fix naming wrt. sys_vars and vars
 
@@ -259,7 +261,7 @@ F = odeFunction(F,vars,gma_params);
 delta_S = 0.003;
 delta_RR = 0.01;
 delta_TF = 0.1;
-delta_P = 0.1;
+delta_P = 0.02;
 
 kappa_up = 1;
 K_up = 0.1;
@@ -272,7 +274,7 @@ alpha_T = 1;
 
 
 
-gamma_const = 1;
+gamma_const = 100;
 
 
 % Observation Noise Variance
@@ -283,18 +285,18 @@ xi = 1;
 tau = 1;
 
 
-init_states = [10, 10, 100, 10, 10];
+init_states = [gamma_const, 1, 100, 1, 1];
 
 % Solve ODE system 
 
 F_ode=@(t,Y) F(t, Y, eval(subs(gma_params)));
 t0 = 0;
-t_end = 100;
+t_end = 600;
 y0 = init_states;  % TODO: Replace with FLAG coded intital conditions; Is that a problem?
-opt = odeset('RelTol',1e-6,'AbsTol',1e-6,'Vectorized','on',NonNegative=[1,2,3,4,5]);
+opt = odeset('RelTol',1e-6,'AbsTol',1e-6,'Vectorized','on',NonNegative=[1,2,3,4,5],OutputFcn='odeplot');
 figure(10)
 gma_sol = ode15s(F_ode,[t0:tau:t_end],y0,opt);
-ode15s(F_ode,[t0:tau:t_end],y0,opt);
+%ode15s(F_ode,[t0:tau:t_end],y0,opt);
 legend('S_ext','S_int', 'RR', 'TF', 'P')
 title("Original GMA-system Dynamic Solution")
 
@@ -419,7 +421,7 @@ for i = 2:num_t_steps
 end
 
 % This creates the optimized MEX function (It is a bit suboptimal that this is done everytime atm but accounts for the ARGS having possibly different dimensions depending on tau; should be optimized in the future)
-eval("codegen calculateRecursion.m -args {D_11_cont,D_12_cont,D_21_cont,D_22_cont, J,NUM_STATE_VARS} ")
+% eval("codegen calculateRecursion.m -args {D_11_cont,D_12_cont,D_21_cont,D_22_cont, J,NUM_STATE_VARS} ")
 
 %Calculate Recursion
 [J_FIM, J_FIM_inv]  = calculateRecursion_mex(D_11_cont, D_12_cont, D_21_cont, D_22_cont, J, NUM_STATE_VARS); 
@@ -428,71 +430,31 @@ eval("codegen calculateRecursion.m -args {D_11_cont,D_12_cont,D_21_cont,D_22_con
 %[J_FIM, J_FIM_inv] = calculateRecursion(D_11_cont, D_12_cont, D_21_cont, D_22_cont, J, NUM_STATE_VARS);
 
 
-
-
-% %% TODO: This loop should ultimately be replaced by a simple function call
-% Update: ... has been replaced
-% for i = 2:num_t_steps
-% 
-%     % Update States - J_{n+1}
-%     S_ext = sol_t(1, i);
-%     S_int = sol_t(2,i);
-%     RR = sol_t(3,i);
-%     TF = sol_t(4,i);
-%     P = sol_t(5,i); 
-% 
-% 
-%     % Guard against *DIVISION BY ZERO*
-%     if S_ext == 0
-%         S_ext = 0.0001;
-%     end
-%     if S_int == 0
-%         S_int = 0.0001;
-%     end
-% 
-%     if RR == 0
-%         RR = 0.0001;  
-%     end
-%     if TF == 0
-%         TF = 0.0001;
-%     end
-%     if P == 0
-%         P = 0.0001;
-%     end
-%     
-% 
-% 
-%     % Set t (only relevant if gamma(t) is a function of t)
-%     time_vec = t0:tau:t_end;
-%     t = time_vec(i);
-% 
-% 
-% 
-%     % Substitute - J_{n+1}
-% 
-%     subs(D_11);
-%     subs(D_21);
-%     subs(D_12);
-%     subs(D_22);
-% 
-% 
-%     J = eval(D_22) - (eval(D_21)*pinv(J + eval(D_11))) * eval(D_12);
-% 
-%     J_FIM(:,:,i) = J;
-%     
-%     inv_J_FIM(:,:,i) = pinv(J);
-% 
-% 
-% end
-
 %% Plotting
 
 % Plot the element of the inverse FIM corresponding to S_ext (first element)
 figure(11)
-el = inv_J_FIM(1,1,:);
-plot(1:num_t_steps, squeeze(el))
-title("Inverse FIM Element (1,1) over Time")
-xlabel("Time")
-ylabel("Inverse FIM Element (1,1)")
+for i = 1:NUM_STATE_VARS
+    subplot(2,3,i)
+    el = J_FIM_inv(i,i,:);
+    plot(1:num_t_steps, squeeze(el), 'LineWidth', 2)
+    title(sprintf("Inverse FIM Element (%d,%d) over Time", i, i))
+    xlabel("Time")
+    ylabel(sprintf("Inverse FIM Element (%d,%d)", i, i))
+    grid on
+    set(gca, 'LineWidth', 1.5)
+end
+sgtitle("Inverse FIM Elements over Time")
 
-
+% Log-pots
+figure(12)
+for i = 1:NUM_STATE_VARS
+    subplot(2,3,i)
+    el = J_FIM_inv(i,i,:);
+    plot(1:num_t_steps, log(squeeze(el)), 'LineWidth', 2)
+    title(sprintf("Log-Inverse FIM Element (%d,%d) over Time", i, i))
+    xlabel("Time")
+    ylabel(sprintf("Log-Inverse FIM Element (%d,%d)", i, i))
+    grid on
+    set(gca, 'LineWidth', 1.5)
+end
