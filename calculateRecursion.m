@@ -1,4 +1,4 @@
-function [J_FIM,inv_J_FIM] = calculateRecursion(D_11_cont,D_12_cont,D_21_cont,D_22_cont, J, NUM_STATE_VARS) %#codegen
+function [J_FIM,inv_J_FIM] = calculateRecursion(D_11_cont,D_12_cont,D_21_cont,D_22_cont, NUM_STATE_VARS) %#codegen
 % Calculate Recursion
 
 
@@ -9,12 +9,13 @@ function [J_FIM,inv_J_FIM] = calculateRecursion(D_11_cont,D_12_cont,D_21_cont,D_
     
     inv_J_FIM =zeros(NUM_STATE_VARS, NUM_STATE_VARS, ARR_SIZE);
 
-    J_FIM(:,:,1) = J;
+    % J0 
+    % TODO: Implement J0 as function argument
+    J = zeros(NUM_STATE_VARS, NUM_STATE_VARS);
 
-    inv_J_FIM(:,:,1) = pinv(J); 
     
     
-    for i = 2:ARR_SIZE
+    for i = 1:ARR_SIZE
     
     
     
