@@ -489,51 +489,7 @@ end
     %[J_FIM, J_FIM_inv] = calculateRecursion(D_11_cont, D_12_cont, D_21_cont, D_22_cont, J, NUM_STATE_VARS);
     %toc
 
-   % Plot the S_ext CRLB 
-    figure(1)
-    plot(1:num_t_steps, log(squeeze(J_FIM_inv(1,1,:))), 'LineWidth', 2)
-    title("CRLB - S_{ext}")
-    xlabel("Time")
-    ylabel("$\log (\mathrm{Concentration}^2)$",'Interpreter','latex' )    
-    grid on
-    set(gca, 'LineWidth', 1.5)
-    hold on
-    % Plot the S_int CRLB
-    figure(2)
-    plot(1:num_t_steps, log(squeeze(J_FIM_inv(2,2,:))), 'LineWidth', 2)
-    title("CRLB - S_{int}")
-    xlabel("Time")
-    ylabel("$\log (\mathrm{Concentration}^2)$",'Interpreter','latex' )    
-    grid on
-    set(gca, 'LineWidth', 1.5)
-    hold on
-    % Plot the RR CRLB
-    figure(3)
-    plot(1:num_t_steps, log(squeeze(J_FIM_inv(3,3,:))), 'LineWidth', 2)
-    title("CRLB - RR")
-    xlabel("Time")
-    ylabel("$\log (\mathrm{Concentration}^2)$",'Interpreter','latex' )    
-    grid on
-    set(gca, 'LineWidth', 1.5)
-    hold on
-    % Plot the TF CRLB
-    figure(4)
-    plot(1:num_t_steps, log(squeeze(J_FIM_inv(4,4,:))), 'LineWidth', 2)
-    title("CRLB - TF")
-    xlabel("Time")
-    ylabel("$\log (\mathrm{Concentration}^2)$",'Interpreter','latex' )    
-    grid on
-    set(gca, 'LineWidth', 1.5)
-    hold on
-    % Plot the P CRLB
-    figure(5)
-    plot(1:num_t_steps, log(squeeze(J_FIM_inv(5,5,:))), 'LineWidth', 2)
-    title("CRLB - P")
-    xlabel("Time")
-    ylabel("$\log (\mathrm{Concentration}^2)$",'Interpreter','latex' )    
-    grid on
-    set(gca, 'LineWidth', 1.5)
-    hold on
+
 
 
 
