@@ -228,7 +228,7 @@ D_22 = i_Sigma_n +  (jacobian(h.', x_vec).'  *   1/(sigma_obs^2)  * jacobian(h.'
 % Loop to calculate CLRB for various different parameter values 
 S_ext_arr = [1, 10, 100, 1000, 1e4, 1e5];
 
-
+for k = 1:size(S_ext_arr,2)
 
 %%  Setting up ODE state space model for solving & Solving it
 
@@ -284,7 +284,7 @@ alpha_T = 1;
 
 
 % Loop Assignment
-gamma_const = 100;
+gamma_const = S_ext_arr(k);
 
 
 % Observation Noise Variance
@@ -490,9 +490,20 @@ end
     %toc
 
 
+% Plot the S_ext CRLB 
+    figure(1)
+    plot(1:num_t_steps, log(squeeze(J_FIM_inv(1,1,:))), 'LineWidth', 2)
+    title("CRLB - S_{ext}")
+    xlabel("Time")
+    ylabel("$\log (\mathrm{Concentration}^2)$",'Interpreter','latex' ,'DisplayName',sprintf("%d", S_ext_arr(k)))    
+    grid on
+    set(gca, 'LineWidth', 1.5)
+    hold on
+    legend
 
 
 
+end
 
 %% Plotting
 
