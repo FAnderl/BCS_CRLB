@@ -11,12 +11,15 @@
 %   Specifically the following things are implemented here: 
 %   1) Symbolic calculation of necessary terms for calculation of CRLB of
 %      bacterial sensor as example for general BCS
-%   2)
+%   2) 
+%   3) Simulating deterministic and stoachstic BCS dynamics
 %
 %   INSTRUCTIONS
 %   - Set FLAG "VEC" to true for optimized and vectorized computations
 %   - Set FLAG "SDE_SIM" to true for simulation and plotting of stochastic
 %     BCS dynamics 
+%   - NB! The first run of the script will result in an error "Dimensions of arrays being concatenated are not consistent."   
+%     ---> Refer to comment on line 268!
 %
 %    Authors: Florian Anderl (florian.anderl@ntnu.no), Martin Damrath (martin.damrath@ntnu.no)
 %
@@ -37,8 +40,8 @@ NUM_REACTION_CHANNELS = 11      % Number of distinct reaction channels in BCS
 
 %%%%%%%%%%%%%%%%%%  PARAMETERS %%%%%%%%%%%%%%%%%%%%%%%
 
-DELTA_S_EXT = 0.03;  % 0.03 gives extremely interesting values
-DELTA_S = 0.03;     % 0.03
+DELTA_S_EXT = 0.03; 
+DELTA_S = 0.03;     
 DELTA_RR = 0.001;
 DELTA_TF = 0.1;
 DELTA_P = 0.02;
@@ -101,7 +104,6 @@ gma_params = [delta_S_ext, delta_S, delta_RR, delta_TF, delta_P, kappa_up, K_up,
 % Stoichiometry Matrix
 syms S real
 
-% TODO: 1,3 : 0 -> -1  % THIS IS A NECESSARY HACK 
 S = sym([
     1 -1 -1 0 0 0 0 0 0 0 0;
     0 0 1 -1 0 -2 0 2 0 0 0;
@@ -238,7 +240,7 @@ D_22 = i_Sigma_n +  (jacobian(h.', x_vec).'  *   1/(sigma_obs^2)  * jacobian(h.'
 %%  DETERMINISTIC SYSTEM DYNAMICS
 
 % Loop to calculate CLRB for various different parameter values 
-S_ext_arr =[1, 3, 5, 10, 20, 50, 100];
+S_ext_arr = [100]; % [1, 3, 5, 10, 20, 50, 100];
 
 for b = 1:size(S_ext_arr,2)
 
@@ -266,8 +268,9 @@ vars = [S_ext(t),S_int(t), RR(t), TF(t), P(t)];
 MS = odeFunction(MS,vars);
 
 % NB! Under certain conditions the following needs to be done here:
-% 1) Enter "F_fct_handle.m" and replace the 1st element "element" in the returned vector with
+% 1) Enter "F_fct_handle.m" and replace the 1st element "element" (i.e. the particular value of this element) in the returned vector with
 % "repelem(element,size(in2,2))"
+% 2) For any susbsequent run of the script COMMENT the code line below 
 
 %F_fct_handle = odeFunction(F,vars,gma_params, "File", "F_fct_handle");
 
@@ -362,7 +365,7 @@ F_drift_rate = matlabFunction(F_symfun,"Vars",{t, [S_ext; S_int; RR; TF; P]},'Fi
 
 % Monte Carlo - Euler Maruyama
 % Problematic if very non-linear
-num_mc = 1000; % Number of Monte Carlo simulations
+num_mc = 100; % Number of Monte Carlo simulations
 eul_maruy_sol_t = cell(1);
 eul_maruy_sol_x = cell(1, num_mc);
 for mc = 1:num_mc
@@ -373,7 +376,7 @@ for mc = 1:num_mc
     end
 end
 
-mc_state = 3;  % State variable to be plotted
+mc_state = 5;  % State variable to be plotted
 % Plot all Monte Carlo simulation trajectories and the mean in one plot for the last state  
 figure(1)
 for mc = 1:num_mc
@@ -389,18 +392,23 @@ ylabel("Concentration",'Interpreter',"latex")
 title("Stochastic Simulation - Custom Maruyama-Euler")
 hold off
 
-% Plot with the original ODE solution wihtout P (last state) in the same plot for comparison
-figure(2)
-for mc = 1:num_mc
-    plot(eul_maruy_sol_t,eul_maruy_sol_x{mc}(:,mc_state),'Color',[0.2 0.5 0.9 0.2])
+
+
+if PLT_MXD
+    % Plot with the original ODE solution with/wihtout P (last state) in the same plot for comparison
+    figure(2)
+    for mc = 1:num_mc
+        plot(eul_maruy_sol_t,eul_maruy_sol_x{mc}(:,mc_state),'Color',[0.2 0.5 0.9 0.2],'HandleVisibility','off')
+        hold on
+    end
+    plot(eul_maruy_sol_t,mean(P_mc_slice,2),'r','LineWidth',1.5)
     hold on
+    plot(t0:tau:t_end, sol_t(1:5,:).','LineWidth',1.5,'DisplayName',['S_{ext}','S_{int}', 'RR', 'TF', 'P'])
+    xlabel("Time in min",'Interpreter',"latex")
+    ylabel("Concentration",'Interpreter',"latex")
+    legend
+    hold off
 end
-plot(eul_maruy_sol_t,mean(P_mc_slice,2),'r','LineWidth',1.5)
-hold on
-plot(t0:tau:t_end, sol_t(1:5,:).','LineWidth',1.5,'DisplayName',['S_{ext}','S_{int}', 'RR', 'TF', 'P'])
-xlabel("Time in min",'Interpreter',"latex")
-ylabel("Concentration",'Interpreter',"latex")
-hold off
 
 
 
@@ -433,11 +441,7 @@ D_21_cont = zeros(NUM_STATE_VARS, NUM_STATE_VARS, num_t_steps);
 D_22_cont = zeros(NUM_STATE_VARS, NUM_STATE_VARS, num_t_steps);
 
 
-% D_11_cont_test = zeros(NUM_STATE_VARS, NUM_STATE_VARS, num_t_steps);
-% D_12_cont_test = zeros(NUM_STATE_VARS, NUM_STATE_VARS, num_t_steps);
-% D_21_cont_test = zeros(NUM_STATE_VARS, NUM_STATE_VARS, num_t_steps);
-% D_22_cont_test = zeros(NUM_STATE_VARS, NUM_STATE_VARS, num_t_steps);
-    
+
 if VEC 
 
     % Attempt at numerical implementation of D matrices
@@ -554,9 +558,7 @@ else
             end
         end
     
-        % TODO: Verify, that the relevant values are ACTUALLY substituted in
-        % EACH time step; it could be that after the 1st substitution, the
-        % initial symbolic parameter/variable cannot be substituted anymore
+
         D_11_cont(:,:,i) = eval(subs(D_11));
         D_21_cont(:,:,i) = eval(subs(D_21));
         D_12_cont(:,:,i) = eval(subs(D_12));
@@ -567,16 +569,11 @@ else
 
 end
 
-    % Assert that the D-matrices are correctly calculatet in the vectorized routine and compare to the loop-based implementation
-    %     assert(isequal(D_11_cont, D_11_cont_test))
-    %     assert(isequal(D_12_cont, D_12_cont_test))
-    %     assert(isequal(D_21_cont, D_21_cont_test))
-    %     assert(isequal(D_22_cont, D_22_cont_test))
+
     
     
     % This creates the optimized MEX function (It is a bit suboptimal that this is done everytime atm but accounts for the ARGS having possibly different dimensions depending on tau; should be optimized in the future)
-    % eval("codegen calculateRecursion.m -args {D_11_cont,D_12_cont,D_21_cont,D_22_cont,NUM_STATE_VARS} ")
-    % codegen calculateRecursion.m -args {coder.typeof(0, [Inf, Inf, Inf]),coder.typeof(0, [Inf, Inf, Inf]),coder.typeof(0, [Inf, Inf, Inf]),coder.typeof(0, [Inf, Inf, Inf]), coder.typeof(0, [Inf, Inf]),coder.typeof(0)}
+    eval("codegen calculateRecursion.m -args {D_11_cont,D_12_cont,D_21_cont,D_22_cont,NUM_STATE_VARS} ")
     
     %Calculate Recursion - MEX
     tic 
